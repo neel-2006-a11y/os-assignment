@@ -3,8 +3,12 @@
 #include "Fielder.h"
 #include "Umpire.h"
 #include <pthread.h>
+#include <cstdlib>
+#include <ctime>
 
 int main(){
+    srand(time(NULL));
+    
     pthread_t fielder_threads[11];
     pthread_t bowler_threads[11];
     pthread_t batsman_threads[11];

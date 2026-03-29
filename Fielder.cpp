@@ -4,6 +4,8 @@
 #include <iostream>
 #include "Fielder.h"
 #include "shared.h"
+#include "players.h"
+#include "GanttLogger.h"
 
 void wait_match_start_field(int id){
     pthread_mutex_lock(&umpire_lock);
@@ -25,7 +27,6 @@ void wait_new_bowler_field(){
 void signal_new_bowler_received(){
     pthread_mutex_lock(&umpire_lock);
     fielders_received_bowler++;
-    std::cout << "f::" << fielders_received_bowler << " ";
     if(fielders_received_bowler == NUM_FIELDERS){
         std::cout << std::endl;
         pthread_cond_broadcast(&waiting_for_fielders_received_bowler);
@@ -61,6 +62,8 @@ void field(int id){
         }
         catcher_id = id;
         fielder_ball_reach_time = std::chrono::steady_clock::now();
+        // Log only the fielder who actually catches (first to acquire pitch_lock).
+        GanttLogger::log(player_name(1 - current_team, id), "FIELDER", "CATCH");
     }
     pthread_mutex_unlock(&pitch_lock);
 }
@@ -68,7 +71,6 @@ void field(int id){
 void signal_played_field(){
     pthread_mutex_lock(&umpire_lock);
     players_played_ball++;
-    std::cout << "p::" << players_played_ball << " ";
     if(players_played_ball == NUM_FIELDERS + 2){
         std::cout << std::endl;
         pthread_cond_broadcast(&waiting_for_players_play_ball);
@@ -123,4 +125,5 @@ void* Fielder(void* arg){
 
     }
     // std::cout << "Fielder:" << id << "exit\n";
+    return NULL;
 }

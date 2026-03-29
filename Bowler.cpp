@@ -1,6 +1,8 @@
 #include <iostream>
 #include "Bowler.h"
 #include "shared.h"
+#include "players.h"
+#include "GanttLogger.h"
 
 void wait_match_start_bowl(){
     pthread_mutex_lock(&umpire_lock);
@@ -12,7 +14,9 @@ void wait_match_start_bowl(){
 
 void wait_for_bowler_spot(int id){
     pthread_mutex_lock(&pitch_lock);
-    while(curr_bowler_id!=0 && !match_end){
+    // Wait if: spot taken, OR scheduler has designated a different bowler
+    while(!match_end && (curr_bowler_id != 0 ||
+          (scheduled_bowler_id != 0 && scheduled_bowler_id != id))){
         pthread_cond_wait(&waiting_for_bowler_spot, &pitch_lock);
     }
     if(match_end){
@@ -20,9 +24,9 @@ void wait_for_bowler_spot(int id){
         return;
     }
     curr_bowler_id = id;
+    scheduled_bowler_id = 0;   // clear so next over can be rescheduled
     new_bowler = true;
     pthread_cond_broadcast(&waiting_for_new_bowler);
-    std::cout << "bowler: " << id << std::endl;
     pthread_cond_broadcast(&waiting_for_bowler_chosen);
     pthread_mutex_unlock(&pitch_lock);
 }
@@ -36,17 +40,18 @@ void wait_for_next_ball_bowl(){
 }
 
 void bowl(){
+    std::string name = player_name(1 - current_team, curr_bowler_id);
+    GanttLogger::log(name, "BOWLER", "BOWL_START");
     pthread_mutex_lock(&pitch_lock);
     ball_state = THROWN;
     pthread_cond_broadcast(&waiting_for_ball_thrown);
     pthread_mutex_unlock(&pitch_lock);
-    std::cout << "ball thrown\n";
+    GanttLogger::log(name, "BOWLER", "BOWL_END");
 }
 
 void signal_played_bowl(){
     pthread_mutex_lock(&umpire_lock);
     players_played_ball++;
-    std::cout << "p::" << players_played_ball << " ";
     if(players_played_ball == NUM_FIELDERS + 2){
         std::cout << std::endl;
         pthread_cond_broadcast(&waiting_for_players_play_ball);
@@ -59,7 +64,6 @@ void wait_for_result_of_ball_bowl(){
     while(!result_of_ball_ready){
         pthread_cond_wait(&waiting_for_result_of_ball, & umpire_lock);
     }
-    std::cout << "bowler_received_result\n";
     pthread_mutex_unlock(&umpire_lock);
 }
 
@@ -85,6 +89,19 @@ void signal_result_of_ball_received_bowl(){
 void* Bowler(void* arg){
     int id = *(int*)arg;
     wait_match_start_bowl();
+
+    // Only bowlers and all-rounders are eligible to bowl
+    int bowling_team = 1 - current_team;
+    if (!can_bowl(bowling_team, id)) {
+        // Not a bowler — sleep until match ends (woken by signal_sleeping_bowlers)
+        pthread_mutex_lock(&pitch_lock);
+        while (!match_end) {
+            pthread_cond_wait(&waiting_for_bowler_spot, &pitch_lock);
+        }
+        pthread_mutex_unlock(&pitch_lock);
+        return NULL;
+    }
+
     while(!match_end){
         wait_for_bowler_spot(id);
         while(!match_end){
@@ -99,5 +116,6 @@ void* Bowler(void* arg){
             if(!chk)break;
         }
     }
+    return NULL;
     // std::cout << "Bowler:" << id << "exit\n";
 }
